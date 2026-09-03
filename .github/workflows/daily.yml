@@ -1,0 +1,38 @@
+# Put this file at: .github/workflows/daily.yml in your GitHub repo
+# Runs every day at 09:00 KST (00:00 UTC) — free on any public/private repo.
+
+name: Daily Korean Expression
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 00:00 UTC = 09:00 KST
+  workflow_dispatch:        # lets you trigger it manually to test
+
+permissions:
+  contents: write           # needed to commit history.json back
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Generate and post
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python daily_expression.py
+
+      - name: Save history (so it never repeats an expression)
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add history.json
+          git commit -m "history: day update" || echo "no changes"
+          git push
