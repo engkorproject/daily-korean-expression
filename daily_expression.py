@@ -1,11 +1,11 @@
 """
-Daily Korean Expression bot
-- Generates one expression per day with the Claude API
+Daily Korean Expression bot (Gemini version)
+- Generates one expression per day with the Gemini API (free tier)
 - Posts it to a Discord channel via webhook
 - Remembers past expressions in history.json so it never repeats
 
 Required environment variables:
-  ANTHROPIC_API_KEY    your Anthropic API key (console.anthropic.com)
+  GEMINI_API_KEY       your Gemini API key (aistudio.google.com, free)
   DISCORD_WEBHOOK_URL  Discord channel webhook URL
 """
 
@@ -17,8 +17,8 @@ from pathlib import Path
 import requests
 
 HISTORY_FILE = Path(__file__).parent / "history.json"
-API_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-sonnet-5"
+MODEL = "gemini-2.5-flash"
+API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
 
 def load_history():
@@ -39,7 +39,7 @@ def generate_expression(used):
 Already used (NEVER repeat these): {", ".join(used) if used else "none yet"}
 
 Pick ONE new, genuinely useful everyday Korean expression (word, idiom, or phrase).
-Respond ONLY with JSON, no markdown fences, in exactly this shape:
+Respond ONLY with JSON in exactly this shape:
 {{
   "name": "expression in Hangul (romanization)",
   "when": "one or two sentences: when do you use it?",
@@ -51,22 +51,17 @@ Respond ONLY with JSON, no markdown fences, in exactly this shape:
     resp = requests.post(
         API_URL,
         headers={
-            "x-api-key": os.environ["ANTHROPIC_API_KEY"],
-            "anthropic-version": "2023-06-01",
+            "x-goog-api-key": os.environ["GEMINI_API_KEY"],
             "content-type": "application/json",
         },
         json={
-            "model": MODEL,
-            "max_tokens": 1000,
-            "messages": [{"role": "user", "content": prompt}],
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"response_mime_type": "application/json"},
         },
         timeout=60,
     )
     resp.raise_for_status()
-    text = "".join(
-        block["text"] for block in resp.json()["content"] if block["type"] == "text"
-    )
-    text = text.replace("```json", "").replace("```", "").strip()
+    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
     return json.loads(text)
 
 
