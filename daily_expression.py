@@ -3,6 +3,7 @@ Daily Korean Expression bot (Gemini version)
 - Generates one expression per day with the Gemini API (free tier)
 - Posts it to a Discord channel via webhook
 - Remembers past expressions in history.json so it never repeats
+- Retries automatically if Google returns a temporary error (429/500/503)
 
 Required environment variables:
   GEMINI_API_KEY       your Gemini API key (aistudio.google.com, free)
@@ -12,6 +13,7 @@ Required environment variables:
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -44,25 +46,29 @@ Respond ONLY with JSON in exactly this shape:
   "name": "expression in Hangul (romanization)",
   "when": "one or two sentences: when do you use it?",
   "feel": "one or two sentences: what does it feel like / nuance?",
-  "examples": "two short Korean example sentences with English translations",
+  "examples": "two short Korean example sentences with English translations, separated by a newline character",
   "key_point": "one punchy takeaway sentence"
 }}"""
 
-    resp = requests.post(
-        API_URL,
-        headers={
-            "x-goog-api-key": os.environ["GEMINI_API_KEY"],
-            "content-type": "application/json",
-        },
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"response_mime_type": "application/json"},
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(text)
+    for attempt in range(4):
+        resp = requests.post(
+            API_URL,
+            headers={
+                "x-goog-api-key": os.environ["GEMINI_API_KEY"],
+                "content-type": "application/json",
+            },
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"response_mime_type": "application/json"},
+            },
+            timeout=60,
+        )
+        if resp.status_code in (429, 500, 503) and attempt < 3:
+            time.sleep(30 * (attempt + 1))  # wait 30s, 60s, 90s between tries
+            continue
+        resp.raise_for_status()
+        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        return json.loads(text)
 
 
 def format_post(day, e):
