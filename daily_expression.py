@@ -75,10 +75,10 @@ def format_post(day, e):
     return (
         f"📌Daily Korean Expression {day:02d}\n\n"
         f"**{e['name']}**\n\n"
-        f"✦ When do you use it? — {e['when']}\n\n"
-        f"✦ What does it feel like? — {e['feel']}\n\n"
-        f"✦ Real-world examples — {e['examples']}\n\n"
-        f"👉Key point: {e['key_point']}"
+        f"✦ When do you use it?\n: {e['when']}\n\n"
+        f"✦ What does it feel like?\n: {e['feel']}\n\n"
+        f"✦ Real-world examples\n: {e['examples']}\n\n"
+        f"👉Key point\n: {e['key_point']}"
     )
 
 
