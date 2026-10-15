@@ -1,9 +1,10 @@
 """
-Daily Korean Expression bot (Gemini version)
+Daily Korean Expression bot (Gemini version, with model fallback)
 - Generates one expression per day with the Gemini API (free tier)
 - Posts it to a Discord channel via webhook
 - Remembers past expressions in history.json so it never repeats
-- Retries automatically if Google returns a temporary error (429/500/503)
+- Tries several models in order, so one retired / quota-less model
+  does not stop the daily post
 
 Required environment variables:
   GEMINI_API_KEY       your Gemini API key (aistudio.google.com, free)
@@ -19,8 +20,16 @@ from pathlib import Path
 import requests
 
 HISTORY_FILE = Path(__file__).parent / "history.json"
-MODEL = "gemini-3.1-flash-lite"
-API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
+
+# Tried in order. Update if Google retires a model (404) or removes its
+# free tier (429). Current list: ai.google.dev/gemini-api/docs/pricing
+MODELS = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-3.8-flash",
+]
+API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 def load_history():
@@ -35,8 +44,8 @@ def save_history(history):
     )
 
 
-def generate_expression(used):
-    prompt = f"""You write a "Daily Korean Expression" post for English speakers learning Korean.
+def build_prompt(used):
+    return f"""You write a "Daily Korean Expression" post for English speakers learning Korean.
 
 Already used (NEVER repeat these): {", ".join(used) if used else "none yet"}
 
@@ -50,9 +59,12 @@ Respond ONLY with JSON in exactly this shape:
   "key_point": "one punchy takeaway sentence"
 }}"""
 
-    for attempt in range(4):
+
+def call_model(model, prompt):
+    """Returns parsed JSON, or raises. 2 attempts per model on temporary errors."""
+    for attempt in range(2):
         resp = requests.post(
-            API_URL,
+            f"{API_BASE}/{model}:generateContent",
             headers={
                 "x-goog-api-key": os.environ["GEMINI_API_KEY"],
                 "content-type": "application/json",
@@ -63,12 +75,30 @@ Respond ONLY with JSON in exactly this shape:
             },
             timeout=60,
         )
-        if resp.status_code in (429, 500, 503) and attempt < 3:
-            time.sleep(30 * (attempt + 1))  # wait 30s, 60s, 90s between tries
+        if resp.status_code in (429, 500, 503) and attempt == 0:
+            time.sleep(20)
             continue
         resp.raise_for_status()
         text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text)
+        data = json.loads(text)
+        for key in ("name", "when", "feel", "examples", "key_point"):
+            if not data.get(key):
+                raise ValueError(f"missing field: {key}")
+        return data
+
+
+def generate_expression(used):
+    prompt = build_prompt(used)
+    errors = []
+    for model in MODELS:
+        try:
+            result = call_model(model, prompt)
+            print(f"Used model: {model}")
+            return result
+        except Exception as exc:
+            print(f"Model {model} failed: {exc}", file=sys.stderr)
+            errors.append(f"{model}: {exc}")
+    raise RuntimeError("All models failed:\n" + "\n".join(errors))
 
 
 def format_post(day, e):
