@@ -19,7 +19,7 @@ from pathlib import Path
 import requests
 
 HISTORY_FILE = Path(__file__).parent / "history.json"
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-3.1-flash-lite"
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
 
